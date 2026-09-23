@@ -32,6 +32,12 @@ _DATE_FORMATS: tuple[str, ...] = (
     "%d %b %Y",
     "%B %d, %Y",
     "%b %d, %Y",
+    "%d %b %y",  # 28 MAR 18
+    "%d %B %y",
+    "%Y%m%d",  # 20180304
+    # Month-first (US) formats are tried last, only when day-first fails (e.g. 12/28/2017).
+    "%m/%d/%Y",
+    "%m/%d/%y",
 )
 
 _CURRENCY_SYMBOLS: dict[str, str] = {
@@ -121,9 +127,11 @@ def parse_date(value: Any) -> Optional[date]:
     for candidate in candidates:
         for fmt in _DATE_FORMATS:
             try:
-                return datetime.strptime(candidate, fmt).date()
+                parsed = datetime.strptime(candidate, fmt).date()
             except ValueError:
                 continue
+            if parsed.year >= 1900:  # guard against "19" being read as year 19
+                return parsed
 
     logger.warning("Unknown date format: %r", value)
     return None

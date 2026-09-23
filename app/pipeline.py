@@ -126,6 +126,33 @@ class InvoicePipeline:
             if total_pages > len(pages):
                 warnings.append(f"PDF has {total_pages} pages. Only the first {len(pages)} were used.")
 
+        return self.process_pages(pages, path.name, warnings=warnings, start_time=start)
+
+    def process_pages(
+        self,
+        pages: list[Image.Image],
+        file_name: str,
+        warnings: Optional[list[str]] = None,
+        start_time: Optional[float] = None,
+    ) -> ProcessedDocument:
+        """Process page images that are already in memory (e.g. from a dataset or an upload).
+
+        Args:
+            pages: Page images of ONE document, in order.
+            file_name: Name stored in the result.
+            warnings: Warnings collected so far (optional).
+            start_time: time.perf_counter() value when processing started (optional).
+
+        Raises:
+            ExtractionError: If the model gives no usable answer.
+        """
+        start = start_time if start_time is not None else time.perf_counter()
+        warnings = list(warnings or [])
+        if not pages:
+            raise ValueError("No pages given.")
+        # Same size for OCR, model and drawing, so the boxes line up (no-op if already resized).
+        pages = [prepare_image(page, self.config.max_image_side) for page in pages]
+
         ocr_lines = self._run_ocr(pages, warnings)
         invoice = self.extractor.extract(pages)
         fields, line_items = self.matcher.match_invoice(invoice, ocr_lines)
@@ -135,7 +162,7 @@ class InvoicePipeline:
             warnings.append(f"Not found in OCR text, please check: {', '.join(low_fields)}")
 
         result = DocumentResult(
-            file_name=path.name,
+            file_name=file_name,
             num_pages=len(pages),
             invoice=invoice,
             fields=fields,
@@ -144,7 +171,7 @@ class InvoicePipeline:
             processing_seconds=round(time.perf_counter() - start, 2),
             warnings=warnings,
         )
-        logger.info("Processed %s in %.1f s.", path.name, result.processing_seconds)
+        logger.info("Processed %s in %.1f s.", file_name, result.processing_seconds)
         return ProcessedDocument(result=result, pages=pages, ocr_lines=ocr_lines)
 
 

@@ -39,6 +39,7 @@ class Settings:
         max_pixels: Maximum image size (in pixels) for the Qwen2.5-VL processor.
             Lower = faster and less GPU memory, but small text may be missed.
         max_new_tokens: Maximum length of the model answer.
+        prompt_version: Which extraction prompt to use ("v1" or "v2", see extractor.py).
         pdf_dpi: Resolution used to turn PDF pages into images.
         max_pdf_pages: Only the first N pages of a PDF are processed.
         ocr_min_confidence: OCR lines below this confidence are ignored.
@@ -53,6 +54,7 @@ class Settings:
     min_pixels: int = 256 * 28 * 28
     max_pixels: int = 1280 * 28 * 28
     max_new_tokens: int = 1536
+    prompt_version: str = "v1"
     pdf_dpi: int = 200
     max_pdf_pages: int = 3
     ocr_min_confidence: float = 0.5
@@ -70,6 +72,7 @@ class Settings:
             min_pixels=int(os.getenv("INVOICEAI_MIN_PIXELS", cls.min_pixels)),
             max_pixels=int(os.getenv("INVOICEAI_MAX_PIXELS", cls.max_pixels)),
             max_new_tokens=int(os.getenv("INVOICEAI_MAX_NEW_TOKENS", cls.max_new_tokens)),
+            prompt_version=os.getenv("INVOICEAI_PROMPT_VERSION", cls.prompt_version),
             pdf_dpi=int(os.getenv("INVOICEAI_PDF_DPI", cls.pdf_dpi)),
             max_pdf_pages=int(os.getenv("INVOICEAI_MAX_PDF_PAGES", cls.max_pdf_pages)),
             ocr_min_confidence=float(

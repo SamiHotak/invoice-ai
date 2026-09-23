@@ -58,6 +58,44 @@ Rules:
 - line_items: one entry per product or service. Do not include tax lines, totals or payment lines.
 - If a value is not on the document, use null. Never guess or invent values."""
 
+# v2: English-only, with clearer rules for the fields the model got wrong in
+# early tests (a person's name used as vendor, company name inside the address,
+# cash paid used as total). Compare v1 vs v2 with eval/evaluate.py.
+EXTRACTION_PROMPT_V2 = """You are an expert at reading English invoices and receipts.
+Look at the document image and extract the data below.
+
+Return ONLY one JSON object. No explanation, no markdown, no code fences.
+Use exactly this structure:
+
+{
+  "vendor_name": string or null,
+  "vendor_address": string or null,
+  "invoice_number": string or null,
+  "invoice_date": "YYYY-MM-DD" or null,
+  "currency": string or null,
+  "line_items": [
+    {"description": string or null, "quantity": number or null, "unit_price": number or null, "total": number or null}
+  ],
+  "subtotal": number or null,
+  "tax": number or null,
+  "total_amount": number or null
+}
+
+Rules:
+- vendor_name: the business that issued the document (the seller). It is usually printed in large letters near the top and often ends with words like SDN BHD, BHD, LTD, INC, LLC, ENTERPRISE, TRADING, RESTAURANT or STORE. A person's name on its own (for example a customer or cashier) is NOT the vendor. If the name spans two lines, join them. Copy it exactly as printed.
+- vendor_address: only the seller's postal address (building, street, area, postcode, city, state), joined with ", ". Do NOT include the company name, registration numbers, phone, fax, email or GST/tax IDs.
+- invoice_number: the receipt, invoice, bill or document number (for example "Invoice No", "Receipt #", "Doc No", "Bill No").
+- invoice_date: the transaction date, format YYYY-MM-DD. Most dates are day/month/year (25/12/2018 -> 2018-12-25). If the second number is above 12 (12/28/2017), the date is month/day/year.
+- total_amount: the final amount the customer must pay, including tax and after any rounding adjustment. Look for TOTAL, NETT TOTAL, GRAND TOTAL, TOTAL AMOUNT, AMOUNT DUE or TOTAL (INCL GST). Do NOT use the cash paid, the change, or the subtotal.
+- subtotal: amount before tax, only if printed. tax: total tax amount (GST, SST, VAT), only if printed.
+- Numbers: plain JSON numbers with a dot as decimal separator, no currency symbols, no thousands separators (1,234.50 -> 1234.5).
+- currency: 3-letter ISO code (MYR, USD, EUR, GBP, SGD). "RM" -> "MYR".
+- line_items: one entry per product or service. Do not include tax lines, totals, rounding or payment lines.
+- If a value is not on the document, use null. Never guess or invent values."""
+
+PROMPTS: dict[str, str] = {"v1": EXTRACTION_PROMPT, "v2": EXTRACTION_PROMPT_V2}
+
+
 FIX_JSON_PROMPT = """The text below should be one valid JSON object, but it has an error: {error}
 
 Fix it. Keep the same keys and values. Return ONLY the corrected JSON object.
@@ -162,6 +200,14 @@ class InvoiceExtractor:
         self._model: Any = None
         self._processor: Any = None
         self.last_raw_output: Optional[str] = None  # useful for debugging
+        self.prompt_version = config.prompt_version
+        self.set_prompt_version(config.prompt_version)  # validates the name
+
+    def set_prompt_version(self, version: str) -> None:
+        """Switch the extraction prompt without reloading the model."""
+        if version not in PROMPTS:
+            raise ValueError(f"Unknown prompt version {version!r}. Use one of: {list(PROMPTS)}")
+        self.prompt_version = version
 
     @property
     def is_loaded(self) -> bool:
@@ -261,11 +307,12 @@ class InvoiceExtractor:
         if not pil_images:
             raise ExtractionError("No images given.")
 
-        prompt = EXTRACTION_PROMPT
+        base_prompt = PROMPTS[self.prompt_version]
+        prompt = base_prompt
         if len(pil_images) > 1:
             prompt = (
                 f"The document has {len(pil_images)} pages, shown in order. "
-                "Combine them into one result.\n\n" + EXTRACTION_PROMPT
+                "Combine them into one result.\n\n" + base_prompt
             )
         content: list[dict[str, Any]] = [{"type": "image", "image": img} for img in pil_images]
         content.append({"type": "text", "text": prompt})
