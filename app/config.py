@@ -57,7 +57,7 @@ class Settings:
     min_pixels: int = 256 * 28 * 28
     max_pixels: int = 1280 * 28 * 28
     max_new_tokens: int = 1536
-    prompt_version: str = "v2"
+    prompt_version: str = "v3"
     ocr_fallback: bool = True
     pdf_dpi: int = 200
     max_pdf_pages: int = 3
