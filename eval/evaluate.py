@@ -257,7 +257,7 @@ def to_markdown(summary: dict[str, Any], meta: dict[str, Any]) -> str:
         f"- Documents: **{summary['documents']}** (failed: {summary['failed']})",
         f"- Model: `{meta['model']}` (no fine-tuning), prompt `{meta['prompt_version']}`, "
         f"OCR fallback {'on' if meta.get('ocr_fallback') else 'off'}",
-        f"- OCR: PP-OCR models via RapidOCR (CPU)",
+        "- OCR: PP-OCR models via RapidOCR (CPU)",
         f"- Average time: **{summary['avg_seconds_per_doc']} s** per document on {meta['device']}",
         f"- Dataset: [{DATASET_NAME}](https://huggingface.co/datasets/{DATASET_NAME}), rows {meta['offset']}-{meta['offset'] + summary['documents'] - 1}",
         f"- Date: {meta['date']}",
