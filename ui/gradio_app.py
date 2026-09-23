@@ -28,6 +28,7 @@ import html
 import logging
 import tempfile
 import time
+import warnings
 from datetime import date
 from pathlib import Path
 from typing import Any, Optional, Sequence, Union
@@ -38,7 +39,9 @@ from PIL import Image, UnidentifiedImageError
 from app import __version__
 from app.config import Settings, settings as default_settings
 from app.export import FailedDocument, to_dict, to_excel, to_json
-from app.extractor import ExtractionError
+from app.export import fields_to_check as _export_fields_to_check
+from app.extractor import ExtractionError, UnreadableImageError
+from app.gpu import NoGpuError
 from app.pdf_utils import PdfError
 from app.pipeline import (
     SUPPORTED_EXTENSIONS,
@@ -46,10 +49,14 @@ from app.pipeline import (
     ProcessedDocument,
     UnsupportedFileError,
     get_pipeline,
+    has_valid_signature,
 )
-from app.schema import DocumentResult, FieldResult
+from app.schema import FIELD_LABELS, DocumentResult, FieldResult
 
 logger = logging.getLogger(__name__)
+
+# Gradio 5 warns about changes coming in Gradio 6. We pin gradio<6, so they do not apply.
+warnings.filterwarnings("ignore", message=r".*Gradio 6\.0.*", category=DeprecationWarning)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SAMPLES_DIR = PROJECT_ROOT / "samples"
@@ -57,17 +64,7 @@ MAX_EXAMPLES = 4
 
 Outcome = Union[ProcessedDocument, FailedDocument]
 
-# Display names, in the order they are shown.
-FIELD_LABELS: dict[str, str] = {
-    "vendor_name": "Vendor",
-    "vendor_address": "Vendor address",
-    "invoice_number": "Invoice number",
-    "invoice_date": "Date",
-    "currency": "Currency",
-    "subtotal": "Subtotal",
-    "tax": "Tax",
-    "total_amount": "Total",
-}
+# Short column names for the line items table (the Excel file uses the long ones).
 LINE_ITEM_LABELS: dict[str, str] = {
     "description": "Description",
     "quantity": "Qty",
@@ -81,14 +78,6 @@ CONFIDENCE_TEXT: dict[str, str] = {
     "high": "High",
     "medium": "Check",
     "low": "Not found",
-}
-
-# First bytes of each supported file type, so a renamed file is caught early.
-_MAGIC_BYTES: dict[str, tuple[bytes, ...]] = {
-    ".pdf": (b"%PDF",),
-    ".png": (b"\x89PNG\r\n\x1a\n",),
-    ".jpg": (b"\xff\xd8\xff",),
-    ".jpeg": (b"\xff\xd8\xff",),
 }
 
 # Numbers from eval/results.md (SROIE test split, 100 receipts, prompt v3 + OCR fallback).
@@ -247,7 +236,7 @@ def check_upload(path: Path, config: Settings) -> None:
 
     with path.open("rb") as handle:
         head = handle.read(16)
-    if not head.startswith(_MAGIC_BYTES[suffix]):
+    if not has_valid_signature(suffix, head):
         raise UploadError(
             f"{name}: the content is not a real {suffix.lstrip('.').upper()} file "
             "(maybe it was renamed). Please upload the original file."
@@ -262,10 +251,12 @@ def friendly_error(file_name: str, exc: Exception) -> str:
         return f"{file_name}: this file type is not supported. Please upload JPG, PNG or PDF."
     if isinstance(exc, PdfError):
         return f"{file_name}: the PDF could not be read. It may be broken or password-protected."
-    if isinstance(exc, (UnidentifiedImageError, Image.DecompressionBombError)):
+    if isinstance(exc, (UnreadableImageError, UnidentifiedImageError, Image.DecompressionBombError)):
         return f"{file_name}: the image could not be read. Please upload a normal JPG or PNG."
     if isinstance(exc, ExtractionError):
         return f"{file_name}: the AI model could not read this document. Try a sharper, straighter image."
+    if isinstance(exc, NoGpuError):
+        return f"{file_name}: no GPU is available, so the AI model cannot run. Please contact the admin."
     if type(exc).__name__ == "OutOfMemoryError":  # torch.cuda.OutOfMemoryError
         return f"{file_name}: the GPU ran out of memory. Try a smaller image or a PDF with fewer pages."
     return f"{file_name}: something went wrong while processing this file."
@@ -296,12 +287,8 @@ def confidence_badge(confidence: Optional[str]) -> str:
 
 
 def fields_to_check(result: DocumentResult) -> list[str]:
-    """Names of the top-level fields with medium or low confidence."""
-    return [
-        FIELD_LABELS.get(name, name)
-        for name, field in result.fields.items()
-        if field.confidence in ("medium", "low")
-    ]
+    """Readable names of the top-level fields with medium or low confidence."""
+    return _export_fields_to_check(result.fields)
 
 
 def fields_table_html(result: DocumentResult) -> str:
@@ -665,7 +652,11 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     pipeline = get_pipeline()
     logger.info("Loading models (the first time this downloads about 7 GB)...")
-    pipeline.load()
+    try:
+        pipeline.load()
+    except NoGpuError as exc:
+        logger.error("%s", exc)
+        raise SystemExit(1) from exc
     launch_app(pipeline, share=args.share, server_name=args.host, server_port=args.port)
 
 
