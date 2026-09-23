@@ -9,9 +9,10 @@ transformers>=4.51,<5
 accelerate>=0.30
 qwen-vl-utils>=0.0.8
 
-# OCR (runs on CPU on purpose, so it does not fight with PyTorch for the GPU)
-paddleocr>=3.0,<4
-paddlepaddle>=3.0,<4
+# OCR: PaddleOCR (PP-OCR) models via RapidOCR + ONNX Runtime, on CPU.
+# (The paddleocr package itself crashes in Colab and clashes with PyTorch.)
+rapidocr>=3.0,<4
+onnxruntime>=1.18
 
 # PDF, matching, images, validation
 pymupdf>=1.24
