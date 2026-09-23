@@ -67,9 +67,13 @@ class InvoicePipeline:
         self.matcher = matcher or FieldMatcher(config)
 
     def load(self) -> None:
-        """Load all models now (otherwise they load on the first file)."""
-        self.extractor.load()
+        """Load all models now (otherwise they load on the first file).
+
+        OCR is loaded first on purpose: loading PaddlePaddle after PyTorch
+        can crash the process.
+        """
         self.ocr.load()
+        self.extractor.load()
 
     def load_pages(self, path: Union[str, Path]) -> list[Image.Image]:
         """Open a JPG/PNG/PDF file as a list of resized RGB page images.

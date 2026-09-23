@@ -67,9 +67,9 @@ class OcrEngine:
         return self._ocr is not None
 
     def load(self) -> None:
-           """Load all models now (otherwise they load on the first file)."""
-           self.extractor.load()
-           self.ocr.load()
+        """Load PaddleOCR. Safe to call many times."""
+        if self.is_loaded:
+            return
 
         # Skip a slow online check of model sources on every start.
         os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
