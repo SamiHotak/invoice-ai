@@ -165,13 +165,16 @@ def _load_done(predictions_path: Path) -> dict[str, dict[str, Any]]:
 def evaluate_sample(pipeline: Any, sample: Sample) -> dict[str, Any]:
     """Run the pipeline on one sample and score it. Never raises."""
     start = time.perf_counter()
-    record: dict[str, Any] = {"key": sample.key, "labels": sample.labels, "predicted": {}, "confidence": {}}
+    record: dict[str, Any] = {
+        "key": sample.key, "labels": sample.labels, "predicted": {}, "confidence": {}, "source": {}
+    }
     try:
         doc = pipeline.process_pages([sample.image], f"{sample.key}.jpg")
         for sroie_field, our_field in FIELD_MAP.items():
             field_result = doc.result.fields.get(our_field)
             record["predicted"][sroie_field] = _json_value(getattr(doc.result.invoice, our_field))
             record["confidence"][sroie_field] = field_result.confidence if field_result else None
+            record["source"][sroie_field] = field_result.source if field_result else None
         record["error"] = None
     except Exception as exc:  # keep going: one bad receipt must not stop the run
         logger.exception("Failed on %s", sample.key)
@@ -201,6 +204,7 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     """Turn per-document records into per-field metrics."""
     fields: dict[str, Any] = {}
     confidence: dict[str, Any] = {}
+    fallback: dict[str, Any] = {}
     for sroie_field, our_field in FIELD_MAP.items():
         scored = [r for r in records if r["scores"].get(sroie_field) is not None]
         n = len(scored)
@@ -221,6 +225,13 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
             levels[level] = {"count": len(group), "exact_match": round(correct / len(group), 4) if group else None}
         confidence[our_field] = levels
 
+        used = [r for r in scored if (r.get("source") or {}).get(sroie_field) == "ocr_fallback"]
+        if used:
+            fallback[our_field] = {
+                "used": len(used),
+                "exact_match": round(sum(r["scores"][sroie_field]["exact"] for r in used) / len(used), 4),
+            }
+
     ok = [r for r in records if r["error"] is None]
     times = [r["seconds"] for r in ok]
     return {
@@ -230,6 +241,7 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
         "median_seconds_per_doc": round(statistics.median(times), 2) if times else None,
         "fields": fields,
         "confidence": confidence,
+        "fallback": fallback,
     }
 
 
@@ -243,7 +255,8 @@ def to_markdown(summary: dict[str, Any], meta: dict[str, Any]) -> str:
         f"# Evaluation on SROIE ({meta['split']} split)",
         "",
         f"- Documents: **{summary['documents']}** (failed: {summary['failed']})",
-        f"- Model: `{meta['model']}` (no fine-tuning), prompt `{meta['prompt_version']}`",
+        f"- Model: `{meta['model']}` (no fine-tuning), prompt `{meta['prompt_version']}`, "
+        f"OCR fallback {'on' if meta.get('ocr_fallback') else 'off'}",
         f"- OCR: PP-OCR models via RapidOCR (CPU)",
         f"- Average time: **{summary['avg_seconds_per_doc']} s** per document on {meta['device']}",
         f"- Dataset: [{DATASET_NAME}](https://huggingface.co/datasets/{DATASET_NAME}), rows {meta['offset']}-{meta['offset'] + summary['documents'] - 1}",
@@ -271,6 +284,20 @@ def to_markdown(summary: dict[str, Any], meta: dict[str, Any]) -> str:
     for our_field, levels in summary["confidence"].items():
         cells = [f"{_pct(levels[l]['exact_match'])} ({levels[l]['count']})" for l in ("high", "medium", "low")]
         lines.append(f"| {our_field} | " + " | ".join(cells) + " |")
+
+    if summary.get("fallback"):
+        lines += [
+            "",
+            "## OCR fallback",
+            "",
+            "When the model's total or date was not found on the document, the value was taken",
+            "from the OCR text instead (these fields show as \"medium\" confidence above).",
+            "",
+            "| Field | Used on | Exact match when used |",
+            "|---|---|---|",
+        ]
+        for our_field, stats in summary["fallback"].items():
+            lines.append(f"| {our_field} | {stats['used']} docs | {_pct(stats['exact_match'])} |")
     lines.append("")
     return "\n".join(lines)
 
@@ -344,6 +371,7 @@ def run_evaluation(
         "split": split,
         "offset": offset,
         "prompt_version": used_prompt,
+        "ocr_fallback": bool(getattr(pipeline, "use_ocr_fallback", False)),
         "model": getattr(getattr(pipeline, "config", None), "model_name", "unknown"),
         "device": _device_name(),
         "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
@@ -373,7 +401,8 @@ def main() -> None:
     parser.add_argument("--split", default="test", choices=["train", "test"])
     parser.add_argument("--limit", type=int, default=100, help="Number of documents (default 100).")
     parser.add_argument("--offset", type=int, default=0, help="Start at this row.")
-    parser.add_argument("--prompt", default=None, help="Prompt version, e.g. v1 or v2.")
+    parser.add_argument("--prompt", default=None, help="Prompt version: v1, v2 or v3.")
+    parser.add_argument("--no-fallback", action="store_true", help="Switch off the OCR fallback.")
     parser.add_argument("--output-dir", default="eval")
     parser.add_argument("--no-resume", action="store_true", help="Start from zero.")
     args = parser.parse_args()
@@ -382,6 +411,7 @@ def main() -> None:
     from app.pipeline import get_pipeline
 
     pipeline = get_pipeline()
+    pipeline.use_ocr_fallback = not args.no_fallback
     pipeline.load()
     report = run_evaluation(
         pipeline,
