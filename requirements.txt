@@ -1,4 +1,4 @@
-# InvoiceAI - Day 1 requirements
+# InvoiceAI - requirements (Day 2)
 # Torch is preinstalled on Google Colab. For local use, install torch
 # first from https://pytorch.org (pick the right CUDA version).
 torch>=2.2
@@ -9,11 +9,17 @@ transformers>=4.51,<5
 accelerate>=0.30
 qwen-vl-utils>=0.0.8
 
-# Images and data validation
-pillow>=10.0
+# OCR (runs on CPU on purpose, so it does not fight with PyTorch for the GPU)
+paddleocr>=3.0,<4
+paddlepaddle>=3.0,<4
+
+# PDF, matching, images, validation
+pymupdf>=1.24
+rapidfuzz>=3.0
+numpy>=1.24
+pillow>=10.1
 pydantic>=2.6,<3
 
 # Added later (do not install yet):
-# Day 2: paddleocr, paddlepaddle, pymupdf, rapidfuzz
 # Day 4: fastapi, uvicorn, python-multipart, pandas, openpyxl, pytest, httpx
 # Day 5: gradio
