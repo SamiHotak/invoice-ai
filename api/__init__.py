@@ -1,0 +1,1 @@
+"""InvoiceAI REST API."""
