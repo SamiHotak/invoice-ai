@@ -1,0 +1,19 @@
+# InvoiceAI - Day 1 requirements
+# Torch is preinstalled on Google Colab. For local use, install torch
+# first from https://pytorch.org (pick the right CUDA version).
+torch>=2.2
+torchvision>=0.17
+
+# Vision-language model (Qwen2.5-VL needs transformers >= 4.49)
+transformers>=4.51,<5
+accelerate>=0.30
+qwen-vl-utils>=0.0.8
+
+# Images and data validation
+pillow>=10.0
+pydantic>=2.6,<3
+
+# Added later (do not install yet):
+# Day 2: paddleocr, paddlepaddle, pymupdf, rapidfuzz
+# Day 4: fastapi, uvicorn, python-multipart, pandas, openpyxl, pytest, httpx
+# Day 5: gradio

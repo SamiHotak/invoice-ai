@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets
+.env
+*.env
+
+# Jupyter / Colab
+.ipynb_checkpoints/
+sample_data/
+drive/
+
+# Model weights and caches
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.onnx
+.cache/
+hf_cache/
+huggingface/
+
+# Datasets and large outputs
+data/
+datasets/
+outputs/
+*.zip
+*.tar.gz
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
