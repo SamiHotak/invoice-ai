@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, status
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from starlette.concurrency import run_in_threadpool
@@ -29,20 +29,19 @@ from starlette.concurrency import run_in_threadpool
 from app import __version__
 from app.config import Settings, settings as default_settings
 from app.export import FailedDocument, to_dict, to_excel
-from app.extractor import ExtractionError
+from app.extractor import ExtractionError, UnreadableImageError
 from app.pdf_utils import PdfError
-from app.pipeline import SUPPORTED_EXTENSIONS, InvoicePipeline, UnsupportedFileError, get_pipeline
+from app.pipeline import (
+    SUPPORTED_EXTENSIONS,
+    InvoicePipeline,
+    UnsupportedFileError,
+    get_pipeline,
+    has_valid_signature,
+)
 from app.schema import DocumentResult
 
 logger = logging.getLogger(__name__)
 
-# First bytes of each supported file type, so a renamed file is caught.
-_MAGIC_BYTES: dict[str, tuple[bytes, ...]] = {
-    ".pdf": (b"%PDF",),
-    ".png": (b"\x89PNG\r\n\x1a\n",),
-    ".jpg": (b"\xff\xd8\xff",),
-    ".jpeg": (b"\xff\xd8\xff",),
-}
 EXCEL_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
@@ -105,7 +104,7 @@ class DocumentService:
             raise ApiError(400, "empty_file", f"'{name}' is empty.")
         if len(content) > self.max_bytes:
             raise ApiError(413, "file_too_large", f"'{name}' is larger than {self.config.max_upload_mb} MB.")
-        if not content.startswith(_MAGIC_BYTES[suffix]):
+        if not has_valid_signature(suffix, content[:16]):
             raise ApiError(415, "file_type_mismatch", f"'{name}' does not look like a real {suffix} file.")
         return name, content
 
@@ -126,7 +125,7 @@ class DocumentService:
             raise ApiError(503, "not_ready", self.load_error or "Models are still loading. Try again soon.")
         try:
             return await run_in_threadpool(self._process_bytes, name, content)
-        except (PdfError, UnsupportedFileError) as exc:
+        except (PdfError, UnsupportedFileError, UnreadableImageError) as exc:
             raise ApiError(422, "unreadable_file", f"'{name}': {exc}") from exc
         except ExtractionError as exc:
             raise ApiError(422, "extraction_failed", f"'{name}': {exc}") from exc
@@ -227,12 +226,16 @@ def create_app(pipeline: Optional[InvoicePipeline] = None, config: Settings = de
         return to_dict(await service.process(name, content))
 
     @api.post("/extract/batch", tags=["extraction"], summary="Extract data from many files")
-    async def extract_batch(files: list[UploadFile] = File(..., description="Up to 20 files")) -> list[dict[str, Any]]:
+    async def extract_batch(
+        files: list[UploadFile] = File(..., description=f"Up to {config.max_batch_files} files"),
+    ) -> list[dict[str, Any]]:
         """One entry per file, in the same order. Failed files have `status: error` and a message."""
         return [to_dict(item) for item in await service.process_many(files)]
 
     @api.post("/export/excel", tags=["export"], summary="Extract many files and download Excel")
-    async def export_excel(files: list[UploadFile] = File(..., description="Up to 20 files")) -> Response:
+    async def export_excel(
+        files: list[UploadFile] = File(..., description=f"Up to {config.max_batch_files} files"),
+    ) -> Response:
         """Excel with sheets "Invoices", "Line Items" and "Legend". Uncertain values are colored."""
         results = await service.process_many(files)
         return Response(
