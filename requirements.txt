@@ -1,4 +1,4 @@
-# InvoiceAI - requirements (Day 3)
+# InvoiceAI - requirements (Day 4)
 # Torch is preinstalled on Google Colab. For local use, install torch
 # first from https://pytorch.org (pick the right CUDA version).
 torch>=2.2
@@ -24,6 +24,16 @@ pydantic>=2.6,<3
 # Evaluation (SROIE dataset from Hugging Face)
 datasets>=2.18
 
+# API and export
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9
+pandas>=2.0
+openpyxl>=3.1
+
+# Tests
+pytest>=8.0
+httpx>=0.27
+
 # Added later (do not install yet):
-# Day 4: fastapi, uvicorn, python-multipart, pandas, openpyxl, pytest, httpx
 # Day 5: gradio
