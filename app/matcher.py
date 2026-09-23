@@ -119,7 +119,7 @@ def score_number(value: float, text: str) -> float:
 def score_date(value: date, text: str) -> float:
     """100 if the date appears in the text (any common format), else 0."""
     for token in _DATE_TOKEN.findall(text):
-        if parse_date(token) == value:
+        if parse_date(token, warn=False) == value:
             return 100.0
     return 0.0
 

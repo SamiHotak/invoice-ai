@@ -93,7 +93,27 @@ Rules:
 - line_items: one entry per product or service. Do not include tax lines, totals, rounding or payment lines.
 - If a value is not on the document, use null. Never guess or invent values."""
 
-PROMPTS: dict[str, str] = {"v1": EXTRACTION_PROMPT, "v2": EXTRACTION_PROMPT_V2}
+# v3: v2 plus three rules from the round-1 error analysis on SROIE train:
+# a person's name printed ABOVE the shop name, invented years for 2-digit
+# years, and totals that were calculated instead of copied.
+EXTRACTION_PROMPT_V3 = EXTRACTION_PROMPT_V2.replace(
+    "A person's name on its own (for example a customer or cashier) is NOT the vendor.",
+    "A person's name on its own (for example a customer or cashier) is NOT the vendor. "
+    "Many receipts print a person's name on the first line, ABOVE the shop name: skip it "
+    "and use the business name below it.",
+).replace(
+    "If the second number is above 12 (12/28/2017), the date is month/day/year.",
+    "If the second number is above 12 (12/28/2017), the date is month/day/year. "
+    "If the year has only 2 digits, it means 20xx (12-01-19 -> 2019-01-12). "
+    "Never change or guess the year: use the digits that are printed.",
+).replace(
+    "Do NOT use the cash paid, the change, or the subtotal.",
+    "Do NOT use the cash paid, the change, or the subtotal. "
+    "Copy the number exactly as printed next to the total label. "
+    "Never add up, calculate or round numbers yourself.",
+)
+
+PROMPTS: dict[str, str] = {"v1": EXTRACTION_PROMPT, "v2": EXTRACTION_PROMPT_V2, "v3": EXTRACTION_PROMPT_V3}
 
 
 FIX_JSON_PROMPT = """The text below should be one valid JSON object, but it has an error: {error}

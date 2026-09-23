@@ -19,6 +19,7 @@ from PIL import Image
 
 from app.config import Settings, settings as default_settings
 from app.extractor import InvoiceExtractor, get_extractor, prepare_image
+from app.fallback import OcrFallback
 from app.matcher import FieldMatcher
 from app.ocr import OcrEngine, OcrError, OcrLine, get_ocr_engine
 from app.pdf_utils import pdf_page_count, pdf_to_images
@@ -65,6 +66,8 @@ class InvoicePipeline:
         self.extractor = extractor or get_extractor()
         self.ocr = ocr or get_ocr_engine()
         self.matcher = matcher or FieldMatcher(config)
+        self.fallback = OcrFallback()
+        self.use_ocr_fallback = config.ocr_fallback  # can be switched off, e.g. to compare in evaluation
 
     def load(self) -> None:
         """Load all models now (otherwise they load on the first file).
@@ -156,6 +159,9 @@ class InvoicePipeline:
         ocr_lines = self._run_ocr(pages, warnings)
         invoice = self.extractor.extract(pages)
         fields, line_items = self.matcher.match_invoice(invoice, ocr_lines)
+        if self.use_ocr_fallback:
+            invoice, fields, fallback_warnings = self.fallback.apply(invoice, fields, ocr_lines)
+            warnings.extend(fallback_warnings)
 
         low_fields = [name for name, f in fields.items() if f.confidence == "low"]
         if low_fields and ocr_lines:

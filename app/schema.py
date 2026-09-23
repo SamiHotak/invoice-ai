@@ -106,10 +106,15 @@ def parse_number(value: Any) -> Optional[float]:
     return -number if negative else number
 
 
-def parse_date(value: Any) -> Optional[date]:
+def parse_date(value: Any, warn: bool = True) -> Optional[date]:
     """Turn a date string in a common format into a date object.
 
-    Returns None (and logs a warning) if the format is unknown.
+    Args:
+        value: A date, datetime or string.
+        warn: Log a warning if the format is unknown. The matcher sets this to
+            False, because it tries many OCR tokens that are not dates.
+
+    Returns None if the format is unknown.
     """
     if value is None or value == "":
         return None
@@ -133,7 +138,8 @@ def parse_date(value: Any) -> Optional[date]:
             if parsed.year >= 1900:  # guard against "19" being read as year 19
                 return parsed
 
-    logger.warning("Unknown date format: %r", value)
+    if warn:
+        logger.warning("Unknown date format: %r", value)
     return None
 
 
@@ -222,6 +228,7 @@ class Invoice(BaseModel):
 # ---------------------------------------------------------------------------
 
 Confidence = Literal["high", "medium", "low"]
+FieldSource = Literal["model", "ocr_fallback"]
 
 
 class BoundingBox(BaseModel):
@@ -259,7 +266,7 @@ class FieldResult(BaseModel):
 
     confidence:
         high   - value found in the OCR text with a strong match
-        medium - weak match
+        medium - weak match, or value taken from OCR text by the fallback
         low    - not found in the OCR text (possible model mistake)
         None   - the model found no value for this field
     """
@@ -269,6 +276,11 @@ class FieldResult(BaseModel):
     box: Optional[BoundingBox] = None
     match_score: Optional[float] = Field(default=None, description="Best match score 0-100.")
     matched_text: Optional[str] = Field(default=None, description="OCR text that matched.")
+    source: FieldSource = Field(
+        default="model",
+        description='"model" = value from the VLM; "ocr_fallback" = taken from OCR text '
+        "because the model value was not found on the document.",
+    )
 
 
 class DocumentResult(BaseModel):
