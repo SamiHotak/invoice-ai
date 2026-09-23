@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -207,3 +207,70 @@ class Invoice(BaseModel):
     @classmethod
     def _validate_numbers(cls, value: Any) -> Optional[float]:
         return parse_number(value)
+
+
+# ---------------------------------------------------------------------------
+# Day 2: confidence, boxes and the full document result
+# ---------------------------------------------------------------------------
+
+Confidence = Literal["high", "medium", "low"]
+
+
+class BoundingBox(BaseModel):
+    """A rectangle on one page, in pixels of the processed page image."""
+
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    page: int = Field(default=0, description="Page index, starting at 0.")
+
+    @property
+    def height(self) -> float:
+        """Box height in pixels."""
+        return self.y1 - self.y0
+
+    @property
+    def center_y(self) -> float:
+        """Vertical center of the box."""
+        return (self.y0 + self.y1) / 2
+
+    def union(self, other: "BoundingBox") -> "BoundingBox":
+        """Smallest box that contains both boxes (same page)."""
+        return BoundingBox(
+            x0=min(self.x0, other.x0),
+            y0=min(self.y0, other.y0),
+            x1=max(self.x1, other.x1),
+            y1=max(self.y1, other.y1),
+            page=self.page,
+        )
+
+
+class FieldResult(BaseModel):
+    """One extracted value, with how sure we are and where it was found.
+
+    confidence:
+        high   - value found in the OCR text with a strong match
+        medium - weak match
+        low    - not found in the OCR text (possible model mistake)
+        None   - the model found no value for this field
+    """
+
+    value: Any = None
+    confidence: Optional[Confidence] = None
+    box: Optional[BoundingBox] = None
+    match_score: Optional[float] = Field(default=None, description="Best match score 0-100.")
+    matched_text: Optional[str] = Field(default=None, description="OCR text that matched.")
+
+
+class DocumentResult(BaseModel):
+    """Everything the pipeline returns for one file."""
+
+    file_name: str
+    num_pages: int
+    invoice: Invoice
+    fields: dict[str, FieldResult] = Field(default_factory=dict)
+    line_items: list[dict[str, FieldResult]] = Field(default_factory=list)
+    ocr_line_count: int = 0
+    processing_seconds: float = 0.0
+    warnings: list[str] = Field(default_factory=list)

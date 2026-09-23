@@ -2,7 +2,8 @@
 
 Usage:
     from app.extractor import extract
-    invoice = extract("samples/receipt_01.jpg")
+    invoice = extract("samples/receipt_01.jpg")       # one image
+    invoice = extract([page_1, page_2])                # pages of one document
     print(invoice.model_dump_json(indent=2))
 
 The model is loaded only once (on the first call) and then reused.
@@ -14,7 +15,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional, Sequence, Union
 
 from PIL import Image, ImageOps
 from pydantic import ValidationError
@@ -25,6 +26,7 @@ from app.schema import Invoice
 logger = logging.getLogger(__name__)
 
 ImageInput = Union[Image.Image, str, Path]
+ImagesInput = Union[ImageInput, Sequence[ImageInput]]
 
 EXTRACTION_PROMPT = """You are an expert at reading invoices and receipts in German and English.
 Look at the document image and extract the data below.
@@ -238,31 +240,36 @@ class InvoiceExtractor:
         )[0]
         return answer.strip()
 
-    def extract(self, image: ImageInput) -> Invoice:
-        """Extract structured invoice data from one image.
+    def extract(self, images: ImagesInput) -> Invoice:
+        """Extract structured invoice data from one document.
 
         Args:
-            image: A PIL image or a path to a JPG/PNG file.
+            images: One image, or a list of page images of the SAME document
+                (e.g. the pages of a PDF). Each can be a PIL image or a file path.
 
         Returns:
             A validated Invoice.
 
         Raises:
-            ExtractionError: If the image cannot be read, or the model does not
+            ExtractionError: If an image cannot be read, or the model does not
                 return valid JSON even after one retry.
         """
         self.load()
-        pil_image = prepare_image(image, self.config.max_image_side)
+        if isinstance(images, (str, Path, Image.Image)):
+            images = [images]
+        pil_images = [prepare_image(image, self.config.max_image_side) for image in images]
+        if not pil_images:
+            raise ExtractionError("No images given.")
 
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": pil_image},
-                    {"type": "text", "text": EXTRACTION_PROMPT},
-                ],
-            }
-        ]
+        prompt = EXTRACTION_PROMPT
+        if len(pil_images) > 1:
+            prompt = (
+                f"The document has {len(pil_images)} pages, shown in order. "
+                "Combine them into one result.\n\n" + EXTRACTION_PROMPT
+            )
+        content: list[dict[str, Any]] = [{"type": "image", "image": img} for img in pil_images]
+        content.append({"type": "text", "text": prompt})
+        messages = [{"role": "user", "content": content}]
         raw = self._generate(messages)
         self.last_raw_output = raw
         logger.debug("Raw model output: %s", raw)
@@ -303,6 +310,6 @@ def get_extractor() -> InvoiceExtractor:
     return _default_extractor
 
 
-def extract(image: ImageInput) -> Invoice:
-    """Extract structured invoice data from one image (uses the shared model)."""
-    return get_extractor().extract(image)
+def extract(images: ImagesInput) -> Invoice:
+    """Extract structured invoice data from one document (uses the shared model)."""
+    return get_extractor().extract(images)
