@@ -69,8 +69,7 @@ class InvoicePipeline:
     def load(self) -> None:
         """Load all models now (otherwise they load on the first file).
 
-        OCR is loaded first on purpose: loading PaddlePaddle after PyTorch
-        can crash the process.
+        OCR is loaded first, because it is small and fast to fail.
         """
         self.ocr.load()
         self.extractor.load()

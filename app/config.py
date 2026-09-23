@@ -41,8 +41,6 @@ class Settings:
         max_new_tokens: Maximum length of the model answer.
         pdf_dpi: Resolution used to turn PDF pages into images.
         max_pdf_pages: Only the first N pages of a PDF are processed.
-        ocr_lang: PaddleOCR language code.
-        ocr_device: Device for PaddleOCR. CPU by default (see requirements.txt).
         ocr_min_confidence: OCR lines below this confidence are ignored.
         match_high_threshold: Match score (0-100) needed for "high" confidence.
         match_medium_threshold: Match score (0-100) needed for "medium" confidence.
@@ -57,8 +55,6 @@ class Settings:
     max_new_tokens: int = 1536
     pdf_dpi: int = 200
     max_pdf_pages: int = 3
-    ocr_lang: str = "en"
-    ocr_device: str = "cpu"
     ocr_min_confidence: float = 0.5
     match_high_threshold: float = 90.0
     match_medium_threshold: float = 70.0
@@ -76,8 +72,6 @@ class Settings:
             max_new_tokens=int(os.getenv("INVOICEAI_MAX_NEW_TOKENS", cls.max_new_tokens)),
             pdf_dpi=int(os.getenv("INVOICEAI_PDF_DPI", cls.pdf_dpi)),
             max_pdf_pages=int(os.getenv("INVOICEAI_MAX_PDF_PAGES", cls.max_pdf_pages)),
-            ocr_lang=os.getenv("INVOICEAI_OCR_LANG", cls.ocr_lang),
-            ocr_device=os.getenv("INVOICEAI_OCR_DEVICE", cls.ocr_device),
             ocr_min_confidence=float(
                 os.getenv("INVOICEAI_OCR_MIN_CONFIDENCE", cls.ocr_min_confidence)
             ),
