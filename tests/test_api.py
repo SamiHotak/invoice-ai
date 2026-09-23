@@ -99,3 +99,12 @@ def test_safe_file_name():
     assert safe_file_name("../../etc/passwd") == "passwd"
     assert safe_file_name("my receipt (1).jpg") == "my receipt _1_.jpg"
     assert safe_file_name(None) == "upload"
+
+
+def test_docs_show_file_pickers_for_all_uploads(client):
+    """Swagger UI needs format=binary to show file pickers (also for lists of files)."""
+    schemas = client.get("/openapi.json").json()["components"]["schemas"]
+    single = schemas["Body_extract_extract_post"]["properties"]["file"]
+    batch = schemas["Body_extract_batch_extract_batch_post"]["properties"]["files"]["items"]
+    excel = schemas["Body_export_excel_export_excel_post"]["properties"]["files"]["items"]
+    assert single["format"] == batch["format"] == excel["format"] == "binary"
