@@ -1,0 +1,49 @@
+# InvoiceAI with Docker Compose (needs an NVIDIA GPU + NVIDIA Container Toolkit).
+#
+#   docker compose up -d api                 # REST API on http://localhost:8000/docs
+#   docker compose --profile ui up -d ui     # web UI on http://localhost:7860
+#
+# Run only ONE of them at a time on a 16 GB GPU (T4): each one loads its own copy of the model.
+# The model is downloaded once into the "models" volume and reused.
+
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+
+x-common: &common
+  build: .
+  image: invoice-ai:latest
+  environment:
+    INVOICEAI_DTYPE: float16
+    INVOICEAI_MAX_UPLOAD_MB: "20"
+  volumes:
+    - models:/models
+  restart: unless-stopped
+  <<: *gpu
+
+services:
+  api:
+    <<: *common
+    ports:
+      - "8000:8000"
+
+  ui:
+    <<: *common
+    profiles: ["ui"]
+    command: ["python", "-m", "ui.gradio_app", "--port", "7860"]
+    ports:
+      - "7860:7860"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7860/', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15m
+      retries: 3
+
+volumes:
+  models:

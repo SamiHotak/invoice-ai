@@ -1,0 +1,9 @@
+# InvoiceAI - requirements for development: tests and evaluation.
+-r requirements.txt
+
+# Tests
+pytest==8.4.2
+httpx==0.28.1
+
+# Evaluation (SROIE dataset from Hugging Face)
+datasets==4.8.5

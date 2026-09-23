@@ -1,0 +1,10 @@
+# Send only what the image needs to the Docker build (smaller, faster, no secrets).
+*
+!app/
+!api/
+!ui/
+!samples/
+!requirements.txt
+**/__pycache__
+**/*.py[cod]
+**/.gitkeep

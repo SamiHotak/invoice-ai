@@ -47,3 +47,6 @@ outputs/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Evaluation working files (results.md / results.json are kept)
+eval/predictions*.jsonl
