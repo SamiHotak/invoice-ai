@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, status
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from starlette.concurrency import run_in_threadpool
 
@@ -152,6 +153,23 @@ class DocumentService:
         return results
 
 
+def _mark_uploads_as_binary(node: Any) -> None:
+    """Add "format": "binary" to file fields in the OpenAPI schema.
+
+    FastAPI describes uploads with "contentMediaType" only. The Swagger UI on
+    /docs then shows text boxes instead of file pickers for lists of files.
+    Adding "format": "binary" makes every upload field a file picker.
+    """
+    if isinstance(node, dict):
+        if node.get("type") == "string" and node.get("contentMediaType") == "application/octet-stream":
+            node.setdefault("format", "binary")
+        for value in node.values():
+            _mark_uploads_as_binary(value)
+    elif isinstance(node, list):
+        for value in node:
+            _mark_uploads_as_binary(value)
+
+
 def create_app(pipeline: Optional[InvoicePipeline] = None, config: Settings = default_settings) -> FastAPI:
     """Build the FastAPI app. Tests pass a fake pipeline, so no GPU is needed."""
 
@@ -173,6 +191,15 @@ def create_app(pipeline: Optional[InvoicePipeline] = None, config: Settings = de
         lifespan=lifespan,
     )
     api.state.service = service
+
+    def openapi_with_file_pickers() -> dict[str, Any]:
+        if api.openapi_schema is None:
+            schema = get_openapi(title=api.title, version=api.version, description=api.description, routes=api.routes)
+            _mark_uploads_as_binary(schema)
+            api.openapi_schema = schema
+        return api.openapi_schema
+
+    api.openapi = openapi_with_file_pickers  # type: ignore[method-assign]
 
     @api.get("/", include_in_schema=False)
     def root() -> RedirectResponse:
