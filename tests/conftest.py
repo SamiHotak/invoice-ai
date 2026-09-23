@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import sys
 from pathlib import Path
-from typing import Optional
 
 import pytest
 from PIL import Image
@@ -58,7 +57,7 @@ def make_result(file_name: str = "receipt.jpg") -> DocumentResult:
     return DocumentResult(
         file_name=file_name, num_pages=1, invoice=invoice, fields=fields, line_items=line_items,
         ocr_line_count=25, processing_seconds=14.2,
-        warnings=["total_amount: model value 28.11 was not found on the document; used 12.0 from the OCR text instead."],
+        warnings=["Total: the model's value 28.11 was not found on the document, so 12.00 was taken from the OCR text."],
     )
 
 

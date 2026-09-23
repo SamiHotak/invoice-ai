@@ -38,6 +38,10 @@ def test_parse_number(raw, expected):
         ("20180304", date(2018, 3, 4)),
         ("12/28/2017", date(2017, 12, 28)),  # month-first only when day-first is impossible
         ("25/12/2018 8:13:39 PM", date(2018, 12, 25)),
+        ("05 MAR 2018 18:24", date(2018, 3, 5)),  # date with a time attached
+        ("05 Mar 2018 6:24 PM", date(2018, 3, 5)),
+        ("2018-12-25T18:24:00", date(2018, 12, 25)),
+        ("Mar 5, 2018 18:24", date(2018, 3, 5)),
         ("not a date", None),
     ],
 )

@@ -32,7 +32,7 @@ def test_excel_has_expected_sheets_and_rows(result):
     row = {h: c.value for h, c in zip(header, invoices[2])}
     assert row["Total"] == 12.0
     assert row["Needs review"] == "Yes"
-    assert "total_amount" in row["Fields to check"] and "tax" in row["Fields to check"]
+    assert row["Fields to check"] == "Tax, Total"  # readable names, not code names
     error_row = {h: c.value for h, c in zip(header, invoices[3])}
     assert error_row["Status"] == "Error" and "Could not open PDF" in error_row["Notes"]
 
