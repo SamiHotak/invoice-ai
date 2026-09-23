@@ -66,7 +66,7 @@ class OcrEngine:
         """True if PaddleOCR is already in memory."""
         return self._ocr is not None
 
-    ef load(self) -> None:
+    def load(self) -> None:
            """Load all models now (otherwise they load on the first file)."""
            self.extractor.load()
            self.ocr.load()
