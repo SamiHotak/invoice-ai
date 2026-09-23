@@ -48,6 +48,8 @@ class Settings:
         ocr_min_confidence: OCR lines below this confidence are ignored.
         match_high_threshold: Match score (0-100) needed for "high" confidence.
         match_medium_threshold: Match score (0-100) needed for "medium" confidence.
+        max_upload_mb: Largest file the API accepts, in megabytes.
+        max_batch_files: Most files the API accepts in one batch request.
     """
 
     model_name: str = "Qwen/Qwen2.5-VL-3B-Instruct"
@@ -64,6 +66,8 @@ class Settings:
     ocr_min_confidence: float = 0.5
     match_high_threshold: float = 90.0
     match_medium_threshold: float = 70.0
+    max_upload_mb: int = 20
+    max_batch_files: int = 20
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -90,6 +94,8 @@ class Settings:
             match_medium_threshold=float(
                 os.getenv("INVOICEAI_MATCH_MEDIUM", cls.match_medium_threshold)
             ),
+            max_upload_mb=int(os.getenv("INVOICEAI_MAX_UPLOAD_MB", cls.max_upload_mb)),
+            max_batch_files=int(os.getenv("INVOICEAI_MAX_BATCH_FILES", cls.max_batch_files)),
         )
 
 
