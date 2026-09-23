@@ -21,6 +21,7 @@ from PIL import Image, ImageOps
 from pydantic import ValidationError
 
 from app.config import Settings, settings as default_settings
+from app.gpu import preload_nvrtc_builtins, require_gpu
 from app.schema import Invoice
 
 logger = logging.getLogger(__name__)
@@ -129,6 +130,14 @@ class ExtractionError(RuntimeError):
     """Raised when the model output cannot be turned into a valid Invoice."""
 
 
+class UnreadableImageError(ExtractionError):
+    """Raised when an input image file is missing or cannot be opened.
+
+    A subclass of ExtractionError (so old callers still catch it), but separate,
+    so the API and UI can tell the user "bad file" instead of "model failed".
+    """
+
+
 # ---------------------------------------------------------------------------
 # Helpers (no model needed, easy to unit test)
 # ---------------------------------------------------------------------------
@@ -142,17 +151,17 @@ def prepare_image(image: ImageInput, max_side: int) -> Image.Image:
         max_side: The longest side is scaled down to this many pixels.
 
     Raises:
-        ExtractionError: If the file cannot be opened as an image.
+        UnreadableImageError: If the file is missing, broken or too large to open safely.
     """
     if isinstance(image, (str, Path)):
         path = Path(image)
         if not path.is_file():
-            raise ExtractionError(f"File not found: {path}")
+            raise UnreadableImageError(f"File not found: {path.name}")
         try:
             image = Image.open(path)
             image.load()
-        except (OSError, Image.UnidentifiedImageError) as exc:
-            raise ExtractionError(f"Could not read image: {path}") from exc
+        except (OSError, Image.UnidentifiedImageError, Image.DecompressionBombError) as exc:
+            raise UnreadableImageError(f"Could not read image: {path.name}") from exc
 
     image = ImageOps.exif_transpose(image)  # photos from phones are often rotated
     image = image.convert("RGB")
@@ -235,13 +244,20 @@ class InvoiceExtractor:
         return self._model is not None
 
     def load(self) -> None:
-        """Load the model and processor. Safe to call many times."""
+        """Load the model and processor. Safe to call many times.
+
+        Raises:
+            NoGpuError: If there is no GPU (and INVOICEAI_ALLOW_CPU is not set).
+        """
         if self.is_loaded:
             return
+        require_gpu(self.config.device, self.config.allow_cpu)
 
         # Heavy imports happen here, so the rest of the app (and tests) work without a GPU.
         import torch
         from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+
+        preload_nvrtc_builtins(torch.version.cuda)  # CUDA 13 fix, see app/gpu.py
 
         dtype = self._resolve_dtype(torch)
         logger.info(
@@ -252,16 +268,30 @@ class InvoiceExtractor:
         )
         self._model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             self.config.model_name,
-            torch_dtype=dtype,
+            dtype=dtype,
             device_map=self.config.device,
         )
         self._model.eval()
+        self._use_greedy_decoding()
         self._processor = AutoProcessor.from_pretrained(
             self.config.model_name,
             min_pixels=self.config.min_pixels,
             max_pixels=self.config.max_pixels,
         )
         logger.info("Model loaded.")
+
+    def _use_greedy_decoding(self) -> None:
+        """Always pick the most likely token (same input -> same output).
+
+        The model's default generation config contains sampling settings
+        (temperature, top_p, top_k). They are ignored with greedy decoding, but
+        transformers warns about them on every call, so we remove them here.
+        """
+        generation_config = self._model.generation_config
+        generation_config.do_sample = False
+        generation_config.temperature = None
+        generation_config.top_p = None
+        generation_config.top_k = None
 
     def _resolve_dtype(self, torch: Any) -> Any:
         """Pick the torch dtype. CPU always uses float32."""
@@ -297,7 +327,6 @@ class InvoiceExtractor:
             output_ids = self._model.generate(
                 **inputs,
                 max_new_tokens=self.config.max_new_tokens,
-                do_sample=False,  # deterministic output
             )
 
         new_tokens = output_ids[:, inputs.input_ids.shape[1] :]
@@ -317,8 +346,8 @@ class InvoiceExtractor:
             A validated Invoice.
 
         Raises:
-            ExtractionError: If an image cannot be read, or the model does not
-                return valid JSON even after one retry.
+            UnreadableImageError: If an image file cannot be read.
+            ExtractionError: If the model does not return valid JSON even after one retry.
         """
         self.load()
         if isinstance(images, (str, Path, Image.Image)):

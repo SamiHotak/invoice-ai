@@ -1,8 +1,8 @@
 """Pydantic v2 data models for extracted invoices.
 
 All fields are optional, because not every invoice or receipt has every value.
-The validators clean up typical model output (German number format, currency
-symbols, different date formats) so the final data is always consistent.
+The validators clean up typical model output (European and US number formats,
+currency symbols, different date formats) so the final data is always consistent.
 """
 
 from __future__ import annotations
@@ -16,8 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
-# Day-first formats come before month-first ones, because German and most
-# non-US receipts write the day first (15.03.2024, 15/03/2024).
+# Day-first formats come before month-first ones, because most non-US
+# receipts write the day first (15.03.2024, 15/03/2024).
 _DATE_FORMATS: tuple[str, ...] = (
     "%Y-%m-%d",
     "%d.%m.%Y",
@@ -40,6 +40,29 @@ _DATE_FORMATS: tuple[str, ...] = (
     "%m/%d/%y",
 )
 
+# A time at the end of a date string: "18:24", "8:13:39 PM", "18.24", "18:24 hrs".
+_TRAILING_TIME = re.compile(
+    r"[\sT,]+\d{1,2}[:.]\d{2}(?:[:.]\d{2})?\s*(?:[ap]\.?m\.?|hrs?|h)?\s*$", re.IGNORECASE
+)
+
+# Human-readable field names, in display order (used by the UI, Excel and warnings).
+FIELD_LABELS: dict[str, str] = {
+    "vendor_name": "Vendor",
+    "vendor_address": "Vendor address",
+    "invoice_number": "Invoice number",
+    "invoice_date": "Invoice date",
+    "currency": "Currency",
+    "subtotal": "Subtotal",
+    "tax": "Tax",
+    "total_amount": "Total",
+}
+LINE_ITEM_LABELS: dict[str, str] = {
+    "description": "Description",
+    "quantity": "Quantity",
+    "unit_price": "Unit price",
+    "total": "Line total",
+}
+
 _CURRENCY_SYMBOLS: dict[str, str] = {
     "€": "EUR",
     "EURO": "EUR",
@@ -54,7 +77,7 @@ _CURRENCY_SYMBOLS: dict[str, str] = {
 def parse_number(value: Any) -> Optional[float]:
     """Turn a number or a number-like string into a float.
 
-    Handles German and English formats, for example:
+    Handles European and English/US formats, for example:
         "1.234,56 €" -> 1234.56
         "1,234.56"   -> 1234.56
         "12,50"      -> 12.5
@@ -123,9 +146,13 @@ def parse_date(value: Any, warn: bool = True) -> Optional[date]:
     if isinstance(value, date):
         return value
 
-    text = str(value).strip()
-    # Try the full string first, then only the first part (drops a time like "14:32").
+    text = " ".join(str(value).split())
+    # Try the full string first, then without a time at the end
+    # ("05 MAR 2018 18:24" -> "05 MAR 2018"), then only the first word ("25/12/2018 8:13").
     candidates = [text]
+    without_time = _TRAILING_TIME.sub("", text).strip(" ,")
+    if without_time and without_time != text:
+        candidates.append(without_time)
     if " " in text:
         candidates.append(text.split()[0])
 

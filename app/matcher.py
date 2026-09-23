@@ -52,7 +52,7 @@ _CURRENCY_ALIASES: dict[str, tuple[str, ...]] = {
     "SGD": ("SGD", "S$"),
 }
 _NUMBER_TOKEN = re.compile(r"-?\d[\d.,]*")
-_DATE_TOKEN = re.compile(
+DATE_TOKEN = re.compile(
     r"\d{1,4}[./-]\d{1,2}[./-]\d{1,4}"  # 25/12/2018, 2018-12-25
     r"|\d{1,2}\s+[A-Za-z]{3,9}\.?\s+\d{2,4}"  # 25 Dec 2018
     r"|[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}"  # Dec 25, 2018
@@ -118,7 +118,7 @@ def score_number(value: float, text: str) -> float:
 
 def score_date(value: date, text: str) -> float:
     """100 if the date appears in the text (any common format), else 0."""
-    for token in _DATE_TOKEN.findall(text):
+    for token in DATE_TOKEN.findall(text):
         if parse_date(token, warn=False) == value:
             return 100.0
     return 0.0

@@ -23,7 +23,7 @@ from app.fallback import OcrFallback
 from app.matcher import FieldMatcher
 from app.ocr import OcrEngine, OcrError, OcrLine, get_ocr_engine
 from app.pdf_utils import pdf_page_count, pdf_to_images
-from app.schema import DocumentResult
+from app.schema import FIELD_LABELS, DocumentResult
 from app.visualize import draw_fields
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,26 @@ logger = logging.getLogger(__name__)
 IMAGE_EXTENSIONS: frozenset[str] = frozenset({".jpg", ".jpeg", ".png"})
 PDF_EXTENSIONS: frozenset[str] = frozenset({".pdf"})
 SUPPORTED_EXTENSIONS: frozenset[str] = IMAGE_EXTENSIONS | PDF_EXTENSIONS
+
+# First bytes of each supported file type. Used to catch renamed files
+# (e.g. a .txt renamed to .pdf) before they reach the model.
+FILE_SIGNATURES: dict[str, tuple[bytes, ...]] = {
+    ".pdf": (b"%PDF",),
+    ".png": (b"\x89PNG\r\n\x1a\n",),
+    ".jpg": (b"\xff\xd8\xff",),
+    ".jpeg": (b"\xff\xd8\xff",),
+}
+
+
+def has_valid_signature(suffix: str, head: bytes) -> bool:
+    """True if the first bytes of a file match its extension.
+
+    Args:
+        suffix: File extension, e.g. ".pdf" (any case).
+        head: The first bytes of the file (16 are enough).
+    """
+    signatures = FILE_SIGNATURES.get(suffix.lower())
+    return signatures is not None and head.startswith(signatures)
 
 
 class UnsupportedFileError(ValueError):
@@ -156,16 +176,19 @@ class InvoicePipeline:
         # Same size for OCR, model and drawing, so the boxes line up (no-op if already resized).
         pages = [prepare_image(page, self.config.max_image_side) for page in pages]
 
+        ocr_start = time.perf_counter()
         ocr_lines = self._run_ocr(pages, warnings)
+        model_start = time.perf_counter()
         invoice = self.extractor.extract(pages)
+        model_seconds = time.perf_counter() - model_start
         fields, line_items = self.matcher.match_invoice(invoice, ocr_lines)
         if self.use_ocr_fallback:
             invoice, fields, fallback_warnings = self.fallback.apply(invoice, fields, ocr_lines)
             warnings.extend(fallback_warnings)
 
-        low_fields = [name for name, f in fields.items() if f.confidence == "low"]
+        low_fields = [FIELD_LABELS.get(name, name) for name, f in fields.items() if f.confidence == "low"]
         if low_fields and ocr_lines:
-            warnings.append(f"Not found in OCR text, please check: {', '.join(low_fields)}")
+            warnings.append(f"Not found on the document, please check: {', '.join(low_fields)}.")
 
         result = DocumentResult(
             file_name=file_name,
@@ -177,7 +200,13 @@ class InvoicePipeline:
             processing_seconds=round(time.perf_counter() - start, 2),
             warnings=warnings,
         )
-        logger.info("Processed %s in %.1f s.", file_name, result.processing_seconds)
+        logger.info(
+            "Processed %s in %.1f s (OCR %.1f s, model %.1f s).",
+            file_name,
+            result.processing_seconds,
+            model_start - ocr_start,
+            model_seconds,
+        )
         return ProcessedDocument(result=result, pages=pages, ocr_lines=ocr_lines)
 
 

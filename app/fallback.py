@@ -19,9 +19,9 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Optional, Sequence
 
-from app.matcher import _DATE_TOKEN
+from app.matcher import DATE_TOKEN
 from app.ocr import OcrLine
-from app.schema import BoundingBox, FieldResult, Invoice, parse_date, parse_number
+from app.schema import FIELD_LABELS, BoundingBox, FieldResult, Invoice, parse_date, parse_number
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +134,7 @@ def find_date(lines: Sequence[OcrLine], latest_year: Optional[int] = None) -> Op
     latest_year = latest_year or date.today().year + 1
     best: Optional[tuple[tuple[int, int], FoundValue]] = None
     for index, line in enumerate(lines):
-        for token in _DATE_TOKEN.findall(line.text):
+        for token in DATE_TOKEN.findall(line.text):
             parsed = parse_date(token, warn=False)
             if parsed is None or not MIN_YEAR <= parsed.year <= latest_year:
                 continue
@@ -142,6 +142,26 @@ def find_date(lines: Sequence[OcrLine], latest_year: Optional[int] = None) -> Op
             if best is None or key < best[0]:
                 best = (key, FoundValue(parsed, line.box, line.text))
     return best[1] if best else None
+
+
+def _show(value: object) -> str:
+    """A value as text for a warning: money with 2 decimals, dates in ISO format."""
+    if isinstance(value, float):
+        return f"{value:.2f}"
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)
+
+
+def fallback_warning(field_name: str, model_value: object, new_value: object) -> str:
+    """A short message for the user about a value the fallback replaced."""
+    label = FIELD_LABELS.get(field_name, field_name)
+    if model_value is None:
+        return f"{label}: the model found no value, so {_show(new_value)} was taken from the OCR text."
+    return (
+        f"{label}: the model's value {_show(model_value)} was not found on the document, "
+        f"so {_show(new_value)} was taken from the OCR text."
+    )
 
 
 class OcrFallback:
@@ -176,10 +196,7 @@ class OcrFallback:
                 matched_text=found.text,
                 source="ocr_fallback",
             )
-            warnings.append(
-                f"{name}: model value {model_value} was not found on the document; "
-                f"used {found.value} from the OCR text instead."
-            )
+            warnings.append(fallback_warning(name, model_value, found.value))
             logger.info("Fallback %s: %s -> %s (%r)", name, model_value, found.value, found.text)
 
         if updates:

@@ -22,7 +22,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from app.schema import DocumentResult, FieldResult
+from app.schema import FIELD_LABELS, LINE_ITEM_LABELS, DocumentResult, FieldResult
 
 
 @dataclass(frozen=True)
@@ -36,21 +36,11 @@ class FailedDocument:
 ExportItem = Union[DocumentResult, FailedDocument]
 
 # (Excel column name, field name in DocumentResult.fields)
-INVOICE_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("Vendor", "vendor_name"),
-    ("Vendor address", "vendor_address"),
-    ("Invoice number", "invoice_number"),
-    ("Invoice date", "invoice_date"),
-    ("Currency", "currency"),
-    ("Subtotal", "subtotal"),
-    ("Tax", "tax"),
-    ("Total", "total_amount"),
+INVOICE_COLUMNS: tuple[tuple[str, str], ...] = tuple(
+    (label, name) for name, label in FIELD_LABELS.items()
 )
-LINE_ITEM_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("Description", "description"),
-    ("Quantity", "quantity"),
-    ("Unit price", "unit_price"),
-    ("Line total", "total"),
+LINE_ITEM_COLUMNS: tuple[tuple[str, str], ...] = tuple(
+    (label, name) for name, label in LINE_ITEM_LABELS.items()
 )
 MONEY_COLUMNS = frozenset({"Subtotal", "Tax", "Total", "Unit price", "Line total"})
 
@@ -85,9 +75,13 @@ def to_json(results: Sequence[ExportItem], indent: Optional[int] = 2) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _fields_to_check(fields: dict[str, FieldResult]) -> list[str]:
-    """Names of fields with medium or low confidence."""
-    return [name for name, f in fields.items() if f.confidence in ("medium", "low")]
+def fields_to_check(fields: dict[str, FieldResult]) -> list[str]:
+    """Readable names of the fields with medium or low confidence (e.g. "Tax", "Total")."""
+    return [
+        FIELD_LABELS.get(name, name)
+        for name, field in fields.items()
+        if field.confidence in ("medium", "low")
+    ]
 
 
 def _invoice_rows(results: Sequence[ExportItem]) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
@@ -111,7 +105,7 @@ def _invoice_rows(results: Sequence[ExportItem]) -> tuple[list[dict[str, Any]], 
             row[column] = getattr(item.invoice, field)
             if result is not None and result.confidence:
                 confidence[column] = result.confidence
-        to_check = _fields_to_check(item.fields)
+        to_check = fields_to_check(item.fields)
         row.update({
             "Needs review": "Yes" if to_check else "No",
             "Fields to check": ", ".join(to_check),

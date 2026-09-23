@@ -24,6 +24,14 @@ def detect_device() -> str:
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    """Read a yes/no environment variable ("1", "true", "yes" mean yes)."""
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes"}
+
+
 @dataclass(frozen=True)
 class Settings:
     """All tunable settings in one place.
@@ -33,6 +41,9 @@ class Settings:
         device: "cuda" or "cpu" for the vision-language model.
         dtype: Model precision on GPU: "float16", "bfloat16" or "float32".
             On CPU the model always runs in float32.
+        allow_cpu: Allow loading the model on the CPU. Off by default, because
+            the 3B model needs about 16 GB of RAM there and is very slow.
+            Without a GPU the app stops with a clear "No GPU found" error instead.
         max_image_side: Longest image side in pixels. Images are resized once,
             and the same image is used for OCR, the model and the drawn boxes.
         min_pixels: Minimum image size (in pixels) for the Qwen2.5-VL processor.
@@ -48,13 +59,14 @@ class Settings:
         ocr_min_confidence: OCR lines below this confidence are ignored.
         match_high_threshold: Match score (0-100) needed for "high" confidence.
         match_medium_threshold: Match score (0-100) needed for "medium" confidence.
-        max_upload_mb: Largest file the API accepts, in megabytes.
-        max_batch_files: Most files the API accepts in one batch request.
+        max_upload_mb: Largest file the API and the web UI accept, in megabytes.
+        max_batch_files: Most files the API and the web UI accept at once.
     """
 
     model_name: str = "Qwen/Qwen2.5-VL-3B-Instruct"
     device: str = "cpu"
     dtype: str = "float16"
+    allow_cpu: bool = False
     max_image_side: int = 1600
     min_pixels: int = 256 * 28 * 28
     max_pixels: int = 1280 * 28 * 28
@@ -76,13 +88,13 @@ class Settings:
             model_name=os.getenv("INVOICEAI_MODEL", cls.model_name),
             device=os.getenv("INVOICEAI_DEVICE") or detect_device(),
             dtype=os.getenv("INVOICEAI_DTYPE", cls.dtype),
+            allow_cpu=_env_bool("INVOICEAI_ALLOW_CPU", cls.allow_cpu),
             max_image_side=int(os.getenv("INVOICEAI_MAX_IMAGE_SIDE", cls.max_image_side)),
             min_pixels=int(os.getenv("INVOICEAI_MIN_PIXELS", cls.min_pixels)),
             max_pixels=int(os.getenv("INVOICEAI_MAX_PIXELS", cls.max_pixels)),
             max_new_tokens=int(os.getenv("INVOICEAI_MAX_NEW_TOKENS", cls.max_new_tokens)),
             prompt_version=os.getenv("INVOICEAI_PROMPT_VERSION", cls.prompt_version),
-            ocr_fallback=os.getenv("INVOICEAI_OCR_FALLBACK", str(cls.ocr_fallback)).lower()
-            in {"1", "true", "yes"},
+            ocr_fallback=_env_bool("INVOICEAI_OCR_FALLBACK", cls.ocr_fallback),
             pdf_dpi=int(os.getenv("INVOICEAI_PDF_DPI", cls.pdf_dpi)),
             max_pdf_pages=int(os.getenv("INVOICEAI_MAX_PDF_PAGES", cls.max_pdf_pages)),
             ocr_min_confidence=float(
