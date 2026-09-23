@@ -1,0 +1,1 @@
+"""InvoiceAI web interface (Gradio)."""
