@@ -248,4 +248,4 @@ The code is released under the [MIT License](LICENSE). The model and the dataset
 
 ## Author
 
-Built by **Ezat** ([@SamiHotak](https://github.com/SamiHotak)), ML / computer vision engineer. Available for document AI and data extraction projects.
+Built by **Sami Hotak** ([@SamiHotak](https://github.com/SamiHotak)), ML / computer vision engineer. Available for document AI and data extraction projects.
